@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+<head>
+	<title>{% block title %}{% endblock %}</title>
+	<link href="/static/tailwind.css" rel="stylesheet" type="text/css" />
+	<script src="/static/htmx.min.js"></script>
+	<script src="https://unpkg.com/htmx.org/dist/ext/json-enc.js"></script>
+</head>
+<body class="w-screen h-screen flex flex-col">
+	{% block body %}
+	{% endblock %}
+</body>
+</html>

@@ -1,0 +1,11 @@
+[workspace]
+members = [
+    "server",
+	 "database_macros",
+]
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[profile.release]
+opt-level = "z"
+lto = true
