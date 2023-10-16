@@ -11,4 +11,4 @@ proc-macro = true
 proc-macro2 = "1.0.66"
 quote = "1.0.32"
 syn = "2.0.28"
-
+anyhow = "1.0.75"
