@@ -5,6 +5,7 @@ use actix_web::http::header::ContentType;
 use actix_web::{web, App, HttpServer, HttpRequest, HttpResponse };
 use minijinja::value::Value;
 use minijinja::{path_loader, Environment};
+use r2d2_sqlite::SqliteConnectionManager;
 
 thread_local! {
     static CURRENT_REQUEST: RefCell<Option<HttpRequest>> = RefCell::default()
@@ -25,6 +26,7 @@ where
 
 pub struct AppState {
     env: minijinja::Environment<'static>,
+    pub pool: r2d2::Pool<SqliteConnectionManager>
 }
 
 impl AppState {
@@ -44,8 +46,15 @@ async fn main() -> std::io::Result<()> {
     
     let mut env = Environment::new();
     env.set_loader(path_loader("pages"));
-    let state = web::Data::new(AppState { env });
 
+    let manager = SqliteConnectionManager::file("data.sqlite");
+    let pool = r2d2::Pool::new(manager).unwrap();
+
+    let state = web::Data::new(AppState { 
+        env,
+        pool 
+    });
+    
     HttpServer::new(move || {
         App::new()
             .app_data(state.clone())

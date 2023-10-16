@@ -42,8 +42,7 @@ fn body_get(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::Tok
     let types: Vec<_> = fields_named.named.iter().map(|f| &f.ty).collect();
     let conditions: Vec<String> = idents.iter().map(|ident| format!("AND {} = ", ident.as_ref().unwrap())).collect();
     quote! {
-        pub fn get(#(#idents : Option<#types>),*) -> anyhow::Result<Self> {
-            let conn: rusqlite::Connection = rusqlite::Connection::open(DATABASE_PATH)?;
+        pub fn get(conn: &rusqlite::Connection, #(#idents : Option<#types>),*) -> anyhow::Result<Self> {
             let mut query_string: String = format!("SELECT * FROM {} WHERE TRUE = TRUE", #struct_name_string);
             #(
                 if let Some(i) = #idents {
@@ -60,8 +59,7 @@ fn body_get(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::Tok
             return Ok(obj);
         }
 
-        pub fn get_many(#(#idents : Option<#types>),*) -> anyhow::Result<Vec<Self>> {
-            let conn: rusqlite::Connection = rusqlite::Connection::open(DATABASE_PATH)?;
+        pub fn get_many(conn: &rusqlite::Connection, #(#idents : Option<#types>),*) -> anyhow::Result<Vec<Self>> {
             let mut query_string: String = format!("SELECT * FROM {} WHERE TRUE = TRUE", #struct_name_string);
             #(
                 if let Some(i) = #idents {
@@ -104,8 +102,7 @@ fn body_add(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::Tok
     let query_string: String = format!("INSERT INTO {} ({}) VALUES ({});", struct_name_string, joined_vars, joined_brackets);
 
     quote! {
-        pub fn add(&self) -> anyhow::Result<usize> {
-            let conn: rusqlite::Connection = rusqlite::Connection::open(DATABASE_PATH)?;
+        pub fn add(&self, conn: &rusqlite::Connection) -> anyhow::Result<usize> {
             let query_string: String = format!(#query_string #(, self.#idents)* );
             let stmt: usize = conn.execute(&query_string, ())?;  
             return Ok(stmt);
@@ -141,10 +138,8 @@ fn body_update(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::
     let skipped_idents: Vec<_> = idents.iter().skip(1).map(|f| *f).collect();
     
     quote! {
-        pub fn update(&self) -> anyhow::Result<usize> {
-            let conn: rusqlite::Connection = rusqlite::Connection::open(DATABASE_PATH)?;
+        pub fn update(&self, conn: &rusqlite::Connection) -> anyhow::Result<usize> {
             let query_string: String = format!(#query_string #(, self.#skipped_idents)*, self.#first_ident);
-            //
             let stmt: usize = conn.execute(&query_string, ())?;  
             return Ok(stmt);
         }
