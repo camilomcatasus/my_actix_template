@@ -1,7 +1,7 @@
 extern crate proc_macro;
 use quote::{quote, ToTokens};
 use proc_macro::TokenStream;
-use syn::{ parse_macro_input, DeriveInput, Data, Fields, FieldsNamed, Ident};
+use syn::{ parse_macro_input, DeriveInput, Data, Fields, FieldsNamed, Ident, token::Struct};
 
 
 #[proc_macro_derive(Queryable)]
@@ -14,10 +14,13 @@ pub fn print_tokens(input: TokenStream) -> TokenStream {
 
         match data_struct.fields {
             Fields::Named(fields_named) => {
+                let request = request_struct(&fields_named, &struct_name);
                 let get_fn_tokens = body_get(&fields_named, &struct_name);
                 let add_fn_tokens = body_add(&fields_named, &struct_name);
                 let update_fn_tokens = body_update(&fields_named, &struct_name);
                 new_functions = quote! {
+                    #request
+
                     impl #struct_name {
                         #get_fn_tokens
                         #add_fn_tokens
@@ -34,23 +37,38 @@ pub fn print_tokens(input: TokenStream) -> TokenStream {
     return TokenStream::from(new_functions);
 }
 
-fn body_get(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::TokenStream {
+fn request_struct(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::TokenStream {
+    let request_struct: &Ident = &Ident::new(&format!("{}Request", struct_name), proc_macro2::Span::call_site());
+    let idents: Vec<_> = fields_named.named.iter().map(|f| &f.ident).collect();
+    let types: Vec<_> = fields_named.named.iter().map(|f| &f.ty).collect();
+    quote! {
+        pub struct #request_struct {
+        }
+    }
+}
 
+fn body_get(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::TokenStream {
+    let request_struct: &Ident = &Ident::new(&format!("{}Request", struct_name), proc_macro2::Span::call_site());
     let struct_name_string = String::from(struct_name.to_string());
     let idents: Vec<_> = fields_named.named.iter().map(|f| &f.ident).collect();
     let index: Vec<_> = fields_named.named.iter().enumerate().map(|f| f.0).collect();
     let types: Vec<_> = fields_named.named.iter().map(|f| &f.ty).collect();
     let conditions: Vec<String> = idents.iter().map(|ident| format!("AND {} = ", ident.as_ref().unwrap())).collect();
     quote! {
+        pub fn new_get(conn: &rusqlite::Connection, request: #request_struct) {
+        }
         pub fn get(conn: &rusqlite::Connection, #(#idents : Option<#types>),*) -> anyhow::Result<Self> {
+            let mut count = 1;
             let mut query_string: String = format!("SELECT * FROM {} WHERE TRUE = TRUE", #struct_name_string);
             #(
                 if let Some(i) = #idents {
-                    query_string = format!("{}\n{}{}", query_string, #conditions, i);
+                    query_string = format!("{}\n{}?{}", query_string, #conditions, count);
+                    count += 1;
                 }
+
              )*
-            let mut stmt = conn.prepare(&query_string)?;
-            let obj = stmt.query_row([], |row| {
+            
+            let obj = conn.query_row((&query_string), [], |row| {
                 Ok(#struct_name {
                     #(#idents : row.get(#index)?,)*
                 })
@@ -60,10 +78,12 @@ fn body_get(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::Tok
         }
 
         pub fn get_many(conn: &rusqlite::Connection, #(#idents : Option<#types>),*) -> anyhow::Result<Vec<Self>> {
+            let mut count = 1;
             let mut query_string: String = format!("SELECT * FROM {} WHERE TRUE = TRUE", #struct_name_string);
             #(
                 if let Some(i) = #idents {
-                    query_string = format!("{}\n{}{}", query_string, #conditions, i);
+                    query_string = format!("{}\n{}{}", query_string, #conditions, count);
+                    count += 1;
                 }
              )*
 
@@ -84,27 +104,21 @@ fn body_get(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::Tok
 
 fn body_add(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::TokenStream {
     let struct_name_string = String::from(struct_name.to_string());
-    let idents: Vec<_> = fields_named.named.iter().skip(1).map(|f| &f.ident).collect();
-    let types: Vec<_> = fields_named.named.iter().skip(1).map(|f| &f.ty).collect();
-    let type_strings: Vec<_> = types.into_iter().map(|t| {
-        let mut token_stream = proc_macro2::TokenStream::new();
-        t.to_tokens(&mut token_stream);
-        let t_string: &str = &token_stream.to_string();
-        match t_string {
-            "String" => return String::from("\"{}\""),
-            _ => return String::from("{}")
-        }
-    }).collect();
-    let joined_brackets = type_strings.join(", ");
+    let idents: Vec<_> = fields_named.named.iter().map(|f| &f.ident).collect();
     
+    let vals: Vec<String> = idents.iter()
+        .enumerate()
+        .map(|(i, _)| format!("?{}", i)).collect();
+    let joined_vals = vals.join(", ");
+
     let var_strings: Vec<_> = idents.iter().filter_map(|&opt| opt.as_ref()).map(|ident| ident.to_string()).collect();
     let joined_vars: String = var_strings.join(", ");
-    let query_string: String = format!("INSERT INTO {} ({}) VALUES ({});", struct_name_string, joined_vars, joined_brackets);
+    let query_string: String = format!("INSERT INTO {} ({}) VALUES ({});", struct_name_string, joined_vars, joined_vals);
 
     quote! {
         pub fn add(&self, conn: &rusqlite::Connection) -> anyhow::Result<usize> {
-            let query_string: String = format!(#query_string #(, self.#idents)* );
-            let stmt: usize = conn.execute(&query_string, ())?;  
+            let query_string: &str = #query_string;
+            let stmt: usize = conn.execute(query_string, rusqlite::params! [#( self.#idents),*])?;  
             return Ok(stmt);
         }
     }
@@ -113,24 +127,13 @@ fn body_add(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::Tok
 fn body_update(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::TokenStream {
     let struct_name_string = String::from(struct_name.to_string());
     let idents: Vec<_> = fields_named.named.iter().map(|f| &f.ident).collect();
-    let types: Vec<_> = fields_named.named.iter().map(|f| &f.ty).collect();
-    let type_strings: Vec<_> = types.into_iter().map(|t| {
-        let mut token_stream = proc_macro2::TokenStream::new();
-        t.to_tokens(&mut token_stream);
-        let t_string: &str = &token_stream.to_string();
-        match t_string {
-            "String" => return String::from("\"{}\""),
-            _ => return String::from("{}")
-        }
-    }).collect();
-
     let first_ident = idents.get(0).unwrap();
     
     let var_strings: Vec<_> = idents.iter().filter_map(|&opt| opt.as_ref()).map(|ident| ident.to_string()).collect();
     let mut up_strings: Vec<String> = Vec::new();
 
-    for index in 1..type_strings.len() {
-        up_strings.push(format!("{} = {}", var_strings.get(index).unwrap(), type_strings.get(index).unwrap()));
+    for index in 1..idents.len() {
+        up_strings.push(format!("{} = ?{}", var_strings.get(index).unwrap(), index));
     }
 
     let joined_up_strings: String = up_strings.join(",\n");
@@ -139,8 +142,8 @@ fn body_update(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::
     
     quote! {
         pub fn update(&self, conn: &rusqlite::Connection) -> anyhow::Result<usize> {
-            let query_string: String = format!(#query_string #(, self.#skipped_idents)*, self.#first_ident);
-            let stmt: usize = conn.execute(&query_string, ())?;  
+            let query_string: String = format!(#query_string, self.#first_ident);
+            let stmt: usize = conn.execute(&query_string, rusqlite::params![#( self.#skipped_idents),*])?;  
             return Ok(stmt);
         }
     }

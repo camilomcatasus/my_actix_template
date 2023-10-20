@@ -7,6 +7,8 @@ use minijinja::value::Value;
 use minijinja::{path_loader, Environment};
 use r2d2_sqlite::SqliteConnectionManager;
 
+mod models;
+
 thread_local! {
     static CURRENT_REQUEST: RefCell<Option<HttpRequest>> = RefCell::default()
 }

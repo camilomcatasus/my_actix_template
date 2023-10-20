@@ -19,6 +19,8 @@ tokio = "1.28.1"
 actix-files = "0.6.2"
 database_macros = { path = "../database_macros" }
 minijinja = {version = "1.0.5", features = ["loader"]}
-rusqlite = "0.29.0"
+rusqlite = { version = "0.29.0", features = ["bundled"] }
+anyhow = "1.0.75"
 r2d2 = "0.8.10"
 r2d2_sqlite = "0.22.0"
+
