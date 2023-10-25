@@ -60,7 +60,7 @@ async fn main() -> std::io::Result<()> {
     let mut test_model_request : TestModelRequest = Default::default();
     test_model_request.id = Some(1);
     let conn = rusqlite::Connection::open("data.sqlite").unwrap();
-    let test_model = TestModel::new_get(&conn, test_model_request);
+    let test_model = TestModel::get(&conn, test_model_request);
     println!("{:#?}", test_model);
     HttpServer::new(move || {
         App::new()

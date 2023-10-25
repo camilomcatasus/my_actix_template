@@ -60,7 +60,7 @@ fn body_get(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::Tok
     let types: Vec<_> = fields_named.named.iter().map(|f| &f.ty).collect();
     let conditions: Vec<String> = idents.iter().map(|ident| format!("AND {} = ", ident.as_ref().unwrap())).collect();
     quote! {
-        pub fn new_get(conn: &rusqlite::Connection, request: #request_struct) -> anyhow::Result<Self> {
+        pub fn get(conn: &rusqlite::Connection, request: #request_struct) -> anyhow::Result<Self> {
             let mut count = 1;
             let mut query_string: String = format!("SELECT * FROM {} WHERE TRUE = TRUE", #struct_name_string);
             let mut to_sql_objects: Vec<&dyn rusqlite::ToSql> = Vec::new();
@@ -83,38 +83,23 @@ fn body_get(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::Tok
 
             return Ok(obj);
         }
-        pub fn get(conn: &rusqlite::Connection, #(#idents : Option<#types>),*) -> anyhow::Result<Self> {
+        
+        pub fn get_many(conn: &rusqlite::Connection, request: #request_struct) -> anyhow::Result<Vec<Self>> {
             let mut count = 1;
             let mut query_string: String = format!("SELECT * FROM {} WHERE TRUE = TRUE", #struct_name_string);
+            let mut to_sql_objects: Vec<&dyn rusqlite::ToSql> = Vec::new();
             #(
-                if let Some(i) = #idents {
+                let mut #idents: #types;
+                if let Some(i) = request.#idents {
                     query_string = format!("{}\n{}?{}", query_string, #conditions, count);
+                    #idents = i.clone();
+                    to_sql_objects.push(&#idents);
+
                     count += 1;
                 }
-
-             )*
-            
-            let obj = conn.query_row((&query_string), [], |row| {
-                Ok(#struct_name {
-                    #(#idents : row.get(#index)?,)*
-                })
-            })?;
-
-            return Ok(obj);
-        }
-
-        pub fn get_many(conn: &rusqlite::Connection, #(#idents : Option<#types>),*) -> anyhow::Result<Vec<Self>> {
-            let mut count = 1;
-            let mut query_string: String = format!("SELECT * FROM {} WHERE TRUE = TRUE", #struct_name_string);
-            #(
-                if let Some(i) = #idents {
-                    query_string = format!("{}\n{}{}", query_string, #conditions, count);
-                    count += 1;
-                }
-             )*
-
+            )*
             let mut stmt = conn.prepare(&query_string)?;
-            let obj_iter = stmt.query_map([], |row| {
+            let obj_iter = stmt.query_map(rusqlite::params_from_iter(to_sql_objects), |row| {
                 Ok(#struct_name {
                     #(#idents : row.get(#index)?,)*
                 })
