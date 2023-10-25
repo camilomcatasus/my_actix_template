@@ -15,7 +15,9 @@ pub fn print_tokens(input: TokenStream) -> TokenStream {
         match data_struct.fields {
             Fields::Named(fields_named) => {
                 let request = request_struct(&fields_named, &struct_name);
+                println!("{}", request);
                 let get_fn_tokens = body_get(&fields_named, &struct_name);
+                println!("{}", get_fn_tokens);
                 let add_fn_tokens = body_add(&fields_named, &struct_name);
                 let update_fn_tokens = body_update(&fields_named, &struct_name);
                 new_functions = quote! {
@@ -33,7 +35,7 @@ pub fn print_tokens(input: TokenStream) -> TokenStream {
     } else {
         panic!("Only structs are supported");
     }
-    println!("{}", new_functions);
+    //println!("{}", new_functions);
     return TokenStream::from(new_functions);
 }
 
@@ -42,8 +44,11 @@ fn request_struct(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro
     let idents: Vec<_> = fields_named.named.iter().map(|f| &f.ident).collect();
     let types: Vec<_> = fields_named.named.iter().map(|f| &f.ty).collect();
     quote! {
+        #[derive(Default, Clone)]
         pub struct #request_struct {
+            #(pub #idents : Option<#types>),*
         }
+
     }
 }
 
@@ -55,7 +60,28 @@ fn body_get(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::Tok
     let types: Vec<_> = fields_named.named.iter().map(|f| &f.ty).collect();
     let conditions: Vec<String> = idents.iter().map(|ident| format!("AND {} = ", ident.as_ref().unwrap())).collect();
     quote! {
-        pub fn new_get(conn: &rusqlite::Connection, request: #request_struct) {
+        pub fn new_get(conn: &rusqlite::Connection, request: #request_struct) -> anyhow::Result<Self> {
+            let mut count = 1;
+            let mut query_string: String = format!("SELECT * FROM {} WHERE TRUE = TRUE", #struct_name_string);
+            let mut to_sql_objects: Vec<&dyn rusqlite::ToSql> = Vec::new();
+            #(
+                let mut #idents: #types;
+                if let Some(i) = request.#idents {
+                    query_string = format!("{}\n{}?{}", query_string, #conditions, count);
+                    #idents = i.clone();
+                    to_sql_objects.push(&#idents);
+
+                    count += 1;
+                }
+            )*
+
+            let obj: #struct_name = conn.query_row((&query_string), rusqlite::params_from_iter(to_sql_objects), |row| {
+                Ok(#struct_name {
+                    #(#idents : row.get(#index)?,)*
+                })
+            })?;
+
+            return Ok(obj);
         }
         pub fn get(conn: &rusqlite::Connection, #(#idents : Option<#types>),*) -> anyhow::Result<Self> {
             let mut count = 1;
