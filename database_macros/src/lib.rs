@@ -1,8 +1,7 @@
 extern crate proc_macro;
-use quote::{quote, ToTokens};
+use quote::quote;
 use proc_macro::TokenStream;
-use syn::{ parse_macro_input, DeriveInput, Data, Fields, FieldsNamed, Ident, token::Struct};
-
+use syn::{ parse_macro_input, DeriveInput, Data, Fields, FieldsNamed, Ident};
 
 #[proc_macro_derive(Queryable)]
 pub fn print_tokens(input: TokenStream) -> TokenStream {
@@ -15,9 +14,7 @@ pub fn print_tokens(input: TokenStream) -> TokenStream {
         match data_struct.fields {
             Fields::Named(fields_named) => {
                 let request = request_struct(&fields_named, &struct_name);
-                println!("{}", request);
                 let get_fn_tokens = body_get(&fields_named, &struct_name);
-                println!("{}", get_fn_tokens);
                 let add_fn_tokens = body_add(&fields_named, &struct_name);
                 let update_fn_tokens = body_update(&fields_named, &struct_name);
                 new_functions = quote! {
@@ -35,7 +32,6 @@ pub fn print_tokens(input: TokenStream) -> TokenStream {
     } else {
         panic!("Only structs are supported");
     }
-    //println!("{}", new_functions);
     return TokenStream::from(new_functions);
 }
 
@@ -119,7 +115,7 @@ fn body_add(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::Tok
     
     let vals: Vec<String> = idents.iter()
         .enumerate()
-        .map(|(i, _)| format!("?{}", i)).collect();
+        .map(|(i, _)| format!("?{}", i + 1)).collect();
     let joined_vals = vals.join(", ");
 
     let var_strings: Vec<_> = idents.iter().filter_map(|&opt| opt.as_ref()).map(|ident| ident.to_string()).collect();
