@@ -48,6 +48,13 @@ fn request_struct(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro
     }
 }
 
+fn get_conn_type(is_pool: bool) -> proc_macro2::TokenStream {
+    match is_pool {
+        false => return quote! { &rusqlite::Connection },
+        true => return quote! { &r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager> }
+    }
+}
+
 fn body_get(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::TokenStream {
     let request_struct: &Ident = &Ident::new(&format!("{}Request", struct_name), proc_macro2::Span::call_site());
     let struct_name_string = String::from(struct_name.to_string());
@@ -55,6 +62,10 @@ fn body_get(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::Tok
     let index: Vec<_> = fields_named.named.iter().enumerate().map(|f| f.0).collect();
     let types: Vec<_> = fields_named.named.iter().map(|f| &f.ty).collect();
     let conditions: Vec<String> = idents.iter().map(|ident| format!("AND {} = ", ident.as_ref().unwrap())).collect();
+
+
+     
+
     quote! {
         pub fn get(conn: &rusqlite::Connection, request: #request_struct) -> anyhow::Result<Self> {
             let mut count = 1;
@@ -121,7 +132,8 @@ fn body_add(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::Tok
     let var_strings: Vec<_> = idents.iter().filter_map(|&opt| opt.as_ref()).map(|ident| ident.to_string()).collect();
     let joined_vars: String = var_strings.join(", ");
     let query_string: String = format!("INSERT INTO {} ({}) VALUES ({});", struct_name_string, joined_vars, joined_vals);
-
+    
+     
     quote! {
         pub fn add(&self, conn: &rusqlite::Connection) -> anyhow::Result<usize> {
             let query_string: &str = #query_string;
@@ -147,6 +159,7 @@ fn body_update(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::
     let query_string: String = format!("UPDATE {} SET {} WHERE {} = {{}} ;", struct_name_string, joined_up_strings, var_strings.get(0).unwrap());
     let skipped_idents: Vec<_> = idents.iter().skip(1).map(|f| *f).collect();
     
+     
     quote! {
         pub fn update(&self, conn: &rusqlite::Connection) -> anyhow::Result<usize> {
             let query_string: String = format!(#query_string, self.#first_ident);

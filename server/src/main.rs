@@ -5,7 +5,7 @@ use actix_web::http::header::ContentType;
 use actix_web::{web, App, HttpServer, HttpRequest, HttpResponse };
 use minijinja::value::Value;
 use minijinja::{path_loader, Environment};
-use models::{TestModel, TestModelRequest};
+use r2d2::PooledConnection;
 use r2d2_sqlite::SqliteConnectionManager;
 
 mod models;
@@ -53,20 +53,16 @@ async fn main() -> std::io::Result<()> {
     let manager = SqliteConnectionManager::file("data.sqlite");
     let pool = r2d2::Pool::new(manager).unwrap();
 
+    let test: r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager> = pool.get().unwrap();
     let state = web::Data::new(AppState { 
         env,
         pool 
     });
-    let mut test_model_request : TestModelRequest = Default::default();
-    test_model_request.id = Some(1);
-    let conn = rusqlite::Connection::open("data.sqlite").unwrap();
-    let test_model = TestModel::get(&conn, test_model_request);
-    println!("{:#?}", test_model);
     HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
             .service(fs::Files::new("/static", "./static").show_files_listing())
-   })
+    })
     .bind(("127.0.0.1", 8080))?
     .run()
     .await
