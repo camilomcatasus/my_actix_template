@@ -59,7 +59,6 @@ pub fn print_binding_tokens(input: TokenStream) -> TokenStream {
     } else {
         panic!("Only enums are supported");
     }
-    println!("{}", new_functions);
     return TokenStream::from(new_functions);
 }
 
@@ -199,15 +198,15 @@ pub fn libsql_macro(input: TokenStream) -> TokenStream {
             Fields::Named(fields_named) => {
                 let request = request_struct(&fields_named, &struct_name);
                 let get_fn_tokens = libsql_body_get(&fields_named, &struct_name);
-                //let add_fn_tokens = body_add(&fields_named, &struct_name);
-                //let update_fn_tokens = body_update(&fields_named, &struct_name);
+                let add_fn_tokens = libsql_body_add(&fields_named, &struct_name);
+                let update_fn_tokens = libsql_body_update(&fields_named, &struct_name);
                 new_functions = quote! {
                     #request
 
                     impl #struct_name {
                         #get_fn_tokens
-                        //#add_fn_tokens
-                        //#update_fn_tokens
+                        #add_fn_tokens
+                        #update_fn_tokens
                     }
                 }
             }
@@ -216,6 +215,8 @@ pub fn libsql_macro(input: TokenStream) -> TokenStream {
     } else {
         panic!("Only structs are supported");
     }
+
+    println!("{}", new_functions);
     return TokenStream::from(new_functions);
 }
 
@@ -268,6 +269,59 @@ fn libsql_body_get(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macr
                 .collect::<Result<Vec<#struct_name>, _>>()?;
 
             return Ok(obj_vector);
+        }
+    }
+}
+
+fn libsql_body_add(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::TokenStream {
+    let struct_name_string = String::from(struct_name.to_string());
+    let idents: Vec<_> = fields_named.named.iter().map(|f| &f.ident).collect();
+    
+    let vals: Vec<String> = idents.iter()
+        .enumerate()
+        .map(|_| "?".to_string()).collect();
+    let joined_vals = vals.join(", ");
+
+    let var_strings: Vec<_> = idents.iter().filter_map(|&opt| opt.as_ref()).map(|ident| ident.to_string()).collect();
+    let joined_vars: String = var_strings.join(", ");
+    let query_string: String = format!("INSERT INTO {} ({}) VALUES ({});", struct_name_string, joined_vars, joined_vals);
+    
+     
+    quote! {
+        pub async fn add(&self, client: &libsql_client::Client) -> anyhow::Result<usize> {
+            let query_string: &str = #query_string;
+            let mut params: Vec<libsql_client::Value> = Vec::new();
+            #(params.push(self.#idents.clone().into());)*
+            let stmt = client.execute(libsql_client::Statement::with_args(query_string,  &params)).await?;
+            return Ok(stmt.rows_affected as usize);
+        }
+    }
+}
+
+fn libsql_body_update(fields_named: &FieldsNamed, struct_name: &Ident) -> proc_macro2::TokenStream {
+    let struct_name_string = String::from(struct_name.to_string());
+    let idents: Vec<_> = fields_named.named.iter().map(|f| &f.ident).collect();
+    let first_ident = idents.get(0).unwrap();
+    
+    let var_strings: Vec<_> = idents.iter().filter_map(|&opt| opt.as_ref()).map(|ident| ident.to_string()).collect();
+    let mut up_strings: Vec<String> = Vec::new();
+
+    for index in 1..idents.len() {
+        up_strings.push(format!("{} = ?", var_strings.get(index).unwrap()));
+    }
+
+    let joined_up_strings: String = up_strings.join(",\n");
+    let query_string: String = format!("UPDATE {} SET {} WHERE {} = {{}} ;", struct_name_string, joined_up_strings, var_strings.get(0).unwrap());
+    let skipped_idents: Vec<_> = idents.iter().skip(1).map(|f| *f).collect();
+    
+     
+    quote! {
+        pub async fn update(&self, client: &libsql_client::Client) -> anyhow::Result<usize> {
+            let query_string: String = format!(#query_string, self.#first_ident);
+            let mut params: Vec<libsql_client::Value> = Vec::new();
+            #(params.push(self.#skipped_idents.clone().into());)*
+            let stmt = client.execute(libsql_client::Statement::with_args(&query_string, &params)).await?;  
+            return Ok(stmt.rows_affected as usize);
         }
     }
 }

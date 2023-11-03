@@ -41,3 +41,47 @@ async fn get_many() -> anyhow::Result<()> {
     Ok(())
 }
 
+
+#[tokio::test]
+async fn add() -> anyhow::Result<()> {
+    let db = libsql_client::Client::in_memory().unwrap();
+    db.execute("CREATE TABLE LibSqlTest(id INT PRIMARY KEY, test TEXT NOT NULL);").await?;
+    
+    let test_struct = LibSqlTest {
+        id: 1,
+        test: String::from("TEST")
+    };
+
+    let result = test_struct.add(&db).await?;
+    assert!(result == 1);
+    
+    let confirm_req = LibSqlTestRequest {
+        id: Some(1), test: None
+    };
+    let confirm_struct = LibSqlTest::get(&db, confirm_req).await?;
+
+    assert!(confirm_struct.test == "TEST");
+    Ok(())
+}
+
+#[tokio::test]
+async fn update() -> anyhow::Result<()> {
+    let db = libsql_client::Client::in_memory().unwrap();
+    db.execute("CREATE TABLE LibSqlTest(id INT PRIMARY KEY, test TEXT NOT NULL);").await?;
+    db.execute("INSERT INTO LibSqlTest(id, test) VALUES (1, \"test\");").await?;
+    let test_struct = LibSqlTest {
+        id: 1,
+        test: String::from("THE QUICK BROWN FOX")
+    };
+
+    let result = test_struct.update(&db).await?;
+    assert!(result == 1);
+    
+    let confirm_req = LibSqlTestRequest {
+        id: Some(1), test: None
+    };
+    let confirm_struct = LibSqlTest::get(&db, confirm_req).await?;
+
+    assert!(confirm_struct.test == "THE QUICK BROWN FOX");
+    Ok(())
+}

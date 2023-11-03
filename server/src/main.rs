@@ -5,7 +5,6 @@ use actix_web::http::header::ContentType;
 use actix_web::{web, App, HttpServer, HttpRequest, HttpResponse };
 use minijinja::value::Value;
 use minijinja::{path_loader, Environment};
-use r2d2::PooledConnection;
 use r2d2_sqlite::SqliteConnectionManager;
 
 mod models;
@@ -53,7 +52,6 @@ async fn main() -> std::io::Result<()> {
     let manager = SqliteConnectionManager::file("data.sqlite");
     let pool = r2d2::Pool::new(manager).unwrap();
 
-    let test: r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager> = pool.get().unwrap();
     let state = web::Data::new(AppState { 
         env,
         pool 
