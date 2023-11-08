@@ -4,6 +4,7 @@ module.exports = {
 	content: ["./**/*.{html,rs}"],
   theme: {
   },
-  plugins: [],
+  plugins: [
+  ],
 }
 
